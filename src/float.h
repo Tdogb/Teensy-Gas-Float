@@ -8,6 +8,12 @@
 #include <math.h>
 #include <string.h>
 
+#include <ODriveArduino.h>
+#include <Servo.h>
+#include <Chrono.h>
+
+#include "float-imu.h"
+
 // Acceleration average
 #define ACCEL_ARRAY_SIZE 40
 
@@ -296,15 +302,74 @@ float mc_get_input_voltage_filtered(void);
 float mc_temp_fet_filtered(void);
 float mc_temp_motor_filtered(void);
 void mc_set_brake_current(float current);
+float mc_get_duty_cycle_now(void);
 bool should_terminate(void);
 float ahrs_get_roll(ATTITUDE_INFO* att_ref);
 float ahrs_get_pitch(ATTITUDE_INFO* att_ref);
 float ahrs_get_yaw(ATTITUDE_INFO* att_ref);
 float imu_get_pitch(void);
 void imu_get_gyro(float *gyro);
+void update_imu(void);
 float mc_get_rpm(void);
 bool imu_startup_done(void);
-
 void EXT_BUZZER_OFF(void);
 void EXT_BUZZER_ON(void);
-void init(void);
+float get_current(void);
+float l_current_max = 75;
+float l_current_min = 0;
+Servo engine_throttle_servo;
+MPU9250 accelgyro;
+I2Cdev   I2C_M;
+
+// vvvvvvvvvvvvvvvvvv  VERY VERY IMPORTANT vvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+//These are the previously determined offsets and scale factors for accelerometer and magnetometer, using MPU9250_cal and Magneto 1.2
+//The AHRS will NOT work well or at all if these are not correct
+//
+// redetermined 12/16/2020
+//acel offsets and correction matrix
+ float A_B[3] {  539.75,  218.36,  834.53}; 
+ float A_Ainv[3][3]
+  {{  0.51280,  0.00230,  0.00202},
+  {  0.00230,  0.51348, -0.00126},
+  {  0.00202, -0.00126,  0.50368}};
+// mag offsets and correction matrix
+float M_B[3]
+{   18.15,   28.05,  -36.09};
+float M_Ainv[3][3]
+{{  0.68093,  0.00084,  0.00923},
+{  0.00084,  0.69281,  0.00103},
+{  0.00923,  0.00103,  0.64073}};
+
+float G_off[3] = {-299.7, 113.2, 202.4}; //raw offsets, determined for gyro at rest
+// ^^^^^^^^^^^^^^^^^^^ VERY VERY IMPORTANT ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+char s[60]; //snprintf buffer
+//raw data and scaled as vector
+int16_t ax, ay, az;
+int16_t gx, gy, gz;
+int16_t mx, my, mz;
+float Axyz[3];
+float Gxyz[3];
+float Mxyz[3];
+
+#define gscale (250./32768.0)*(PI/180.0)  //gyro default 250 LSB per d/s -> rad/s
+
+// NOW USING MAHONY FILTER
+
+// These are the free parameters in the Mahony filter and fusion scheme,
+// Kp for proportional feedback, Ki for integral
+// with MPU-9250, angles start oscillating at Kp=40. Ki does not seem to help and is not required.
+#define Kp 30.0
+#define Ki 0.0
+
+// globals for AHRS loop timing
+
+unsigned long now = 0, last = 0; //micros() timers
+float deltat = 0;  //loop time in seconds
+unsigned long now_ms, last_ms = 0; //millis() timers
+unsigned long print_ms = 1000; //print every "print_ms" milliseconds
+
+
+// Vector to hold quaternion
+static float q[4] = {1.0, 0.0, 0.0, 0.0};
+static float yaw, pitch, roll; //Euler angle output

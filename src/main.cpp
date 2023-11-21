@@ -19,6 +19,8 @@
  */
 #include "float.h"
 
+ODriveArduino odrive(Serial1);
+
 void buzzer_init()
 {
 	pinMode(buzzer_pin, OUTPUT);
@@ -150,7 +152,7 @@ void configure(data *d) {
 	d->mc_max_temp_fet = 200;//VESC_IF->get_cfg_float(CFG_PARAM_l_temp_fet_start) - 3;
 	d->mc_max_temp_mot = 200;//VESC_IF->get_cfg_float(CFG_PARAM_l_temp_motor_start) - 3;
 	
-	d->mc_current_max = 100;//VESC_IF->get_cfg_float(CFG_PARAM_l_current_max);
+	d->mc_current_max = l_current_max;//VESC_IF->get_cfg_float(CFG_PARAM_l_current_max);
 	int mcm = d->mc_current_max;
 	float mc_max_reduce = d->mc_current_max - mcm;
 	if (mc_max_reduce >= 0.5) {
@@ -160,7 +162,7 @@ void configure(data *d) {
 	}
 
 	// min current is a positive value here!
-	d->mc_current_min = 0;//fabsf(VESC_IF->get_cfg_float(CFG_PARAM_l_current_min));
+	d->mc_current_min = l_current_min;//fabsf(VESC_IF->get_cfg_float(CFG_PARAM_l_current_min));
 	mcm = d->mc_current_min;
 	float mc_min_reduce = fabsf(d->mc_current_min - mcm);
 	if (mc_min_reduce >= 0.5) {
@@ -1326,114 +1328,6 @@ void brake(data *d) {
 	mc_set_brake_current(d->float_conf.brake_current);
 }
 
-bool should_terminate(void) {
-	return false;
-}
-
-float ahrs_get_roll(ATTITUDE_INFO* att_ref) {
-	return 0;
-}
-
-float ahrs_get_pitch(ATTITUDE_INFO* att_ref) {
-	return 0;
-}
-
-float ahrs_get_yaw(ATTITUDE_INFO* att_ref) {
-	return 0;
-}
-
-float imu_get_pitch(void) {
-	return 0;
-}
-
-/*
-Update gyro
-*gyro is a array of 3 floats with the 3 axis
-*/
-void imu_get_gyro(float *gyro) {
-	
-}
-
-/*
-Return the rpm of the wheel
-*/
-float mc_get_rpm(void) {
-	return 0;
-}
-
-/*
-If this is false then float_thd will wait til it is true if in startup state
-*/
-bool imu_startup_done(void) {
-	return true;
-}
-
-float mc_get_input_voltage_filtered(void) {
-	return 999;
-}
-
-/*
-Return the odrive temperature
-*/
-float mc_temp_fet_filtered(void) {
-	return 0;
-}
-
-/*
-Return 999 if either the motor or the engine is overheating
-*/
-float mc_temp_motor_filtered(void) {
-	return 0;
-}
-
-/*
-Create a function that can convert current into a motor/engine command that will brake by said ammount
-Check where this is used in the code to see if it's only used to bring the board to a halt or if it's used in the actual control
-*/
-void mc_set_brake_current(float current) {
-
-}
-
-/*
-Turn buzzer off
-*/
-void EXT_BUZZER_OFF(void) {
-
-}
-
-/*
-Turn buzzer on
-*/
-void EXT_BUZZER_ON(void) {
-
-}
-
-/*
-Need to look into where this is used
-*/
-void set_current(data *d, float current) {
-	// // Limit current output to configured max output
-	// if (current > 0 && current > VESC_IF->get_cfg_float(CFG_PARAM_l_current_max)) {
-	// 	current = VESC_IF->get_cfg_float(CFG_PARAM_l_current_max);
-	// } else if(current < 0 && current < VESC_IF->get_cfg_float(CFG_PARAM_l_current_min)) {
-	// 	current = VESC_IF->get_cfg_float(CFG_PARAM_l_current_min);
-	// }
-
-	// // Reset the timeout
-	// VESC_IF->timeout_reset();
-	// // Set the current delay
-	// VESC_IF->mc_set_current_off_delay(d->motor_timeout_seconds);
-	// // Set Current
-	// VESC_IF->mc_set_current(current);
-}
-
-/*
-Retrun how close we are to maximum rpm of the wheel (0 to 1.0)
-*/
-float mc_get_duty_cycle_now() {
-	return 0;
-}
-
 void float_thd(void *arg) {
 	data *d = (data*)arg;
 	if (d->state != DISABLED) {
@@ -1441,6 +1335,7 @@ void float_thd(void *arg) {
 	}
 	while (!should_terminate()) {
 		buzzer_update(d);
+        update_imu();
 		// Update times
 		d->current_time = ((float)millis())/1000;
 		if (d->last_time == 0) {
@@ -1455,8 +1350,7 @@ void float_thd(void *arg) {
 		d->loop_overshoot = d->diff_time - (d->loop_time_seconds - roundf(d->filtered_loop_overshoot));
 		d->filtered_loop_overshoot = d->loop_overshoot_alpha * d->loop_overshoot + (1.0 - d->loop_overshoot_alpha) * d->filtered_loop_overshoot;
 
-		// Read values for GUI
-		d->motor_current = 0; //*****
+		d->motor_current = get_current(); //*****
 
 		// Get the IMU Values
 		d->roll_angle = RAD2DEG_f(ahrs_get_roll(&d->m_att_ref));
@@ -2217,355 +2111,141 @@ bool flywheel_konami_step(data *d, int input)
 	return false; // Reached if any conditions along the way are failed
 }
 
+bool should_terminate(void) {
+	return false;
+}
+
+float ahrs_get_roll(ATTITUDE_INFO* att_ref) {
+	return roll;
+}
+
+float ahrs_get_pitch(ATTITUDE_INFO* att_ref) {
+	return pitch;
+}
+
+float ahrs_get_yaw(ATTITUDE_INFO* att_ref) {
+	return yaw;
+}
+
+float imu_get_pitch(void) {
+	return Gxyz[0];
+}
+
+void update_imu(void) {
+    float_imu_update();
+}
+/*
+Update gyro
+*gyro is a array of 3 floats with the 3 axis
+*/
+void imu_get_gyro(float *gyro) {
+	gyro = Gxyz;
+}
+/*
+Return the rpm of the wheel
+*/
+float mc_get_rpm(void) {
+	return odrive.getVelocity()*60;
+}
+
+/*
+If this is false then float_thd will wait til it is true if in startup state
+*/
+bool imu_startup_done(void) {
+	return true;
+}
+
+float mc_get_input_voltage_filtered(void) {
+	return odrive.getParameterAsFloat("vbus_voltage");
+}
+
+/*
+Return the odrive temperature
+*/
+float mc_temp_fet_filtered(void) {
+	return 0;
+}
+
+/*
+Return 999 if either the motor or the engine is overheating
+*/
+float mc_temp_motor_filtered(void) {
+	return 0;
+}
+
+/*
+Create a function that can convert current into a motor/engine command that will brake by said ammount
+Check where this is used in the code to see if it's only used to bring the board to a halt or if it's used in the actual control
+*/
+void mc_set_brake_current(float current) {
+
+}
+
+/*
+Retrun how close we are to maximum rpm of the wheel (0 to 1.0)
+*/
+float mc_get_duty_cycle_now() {
+	return 0;
+}
+
+/*
+Turn buzzer off
+*/
+void EXT_BUZZER_OFF(void) {}
+
+/*
+Turn buzzer on
+*/
+void EXT_BUZZER_ON(void) {}
+
+/*
+Need to look into where this is used
+Current can just be sent to the motor since the motor has to react the forces of the engine to get it to turn the wheel (but also have to account for friction)
+*/
+void set_current(data *d, float current) {
+	// // Limit current output to configured max output
+	if (current > 0 && current > l_current_max) {
+		current = l_current_max;
+	} else if(current < 0 && current < l_current_min) {
+		current = l_current_min;
+	}
+    odrive.setTorque(current);
+}
+
+float get_current() {
+
+}
+float previous_rpm_setpoint = 0;
+void set_engine_throttle(float rpm_setpont) {
+
+}
+
 void setup() {
+    Serial.begin(115200);
 	Serial1.begin(115200);
+    engine_throttle_servo.attach(9);
+
 	data *d = (data*)malloc(sizeof(data));
 	memset(d, 0, sizeof(data));
 	if (!d) {
-		Serial1.println("Float App: Out of memory, startup failed!");
+		Serial.println("Float App: Out of memory, startup failed!");
 	}
 	configure(d);
+    confparser_set_defaults_float_config(&(d->float_conf));
 	d->m_att_ref.acc_confidence_decay = 0.1;
 	d->m_att_ref.kp = 0.2;
+    Serial.println("Waiting for ODrive...");
+	float_imu_init();
+	float_imu_update();
+    while (odrive.getState() == AXIS_STATE_UNDEFINED) { delay(100); }
+    while (odrive.getState() != AXIS_STATE_CLOSED_LOOP_CONTROL) {
+        odrive.clearErrors();
+        odrive.setState(AXIS_STATE_CLOSED_LOOP_CONTROL);
+        delay(10);
+    }
 	float_thd(d);
 }
 
 void loop() {
 	
 }
-
-// #include <Arduino.h>
-// #include "float.h"
-
-
-// void setup() {
-//     init();
-// }
-
-// void loop() {
-
-// }
-
-// // #include <Arduino.h>
-// // #include <FlexCAN_T4.h>
-
-// // FlexCAN_T4<CAN0, RX_SIZE_256, TX_SIZE_16> can1;
-
-// // #include <ODriveCAN.hpp>
-// // #include <ODriveEnums.h>
-
-// // void decode(CAN_message_t& rxmsg);
-// // void request_axis_state(ODriveAxisState state);
-
-// // Get_Encoder_Estimates_msg_t encoder;
-// // Heartbeat_msg_t             heartbeat;
-
-// // uint32_t axis_id = 0x00;  // odrv0.can.config.node_id
-
-// // void setup() {
-// //     Serial.begin(115200);
-// //     while (!Serial) {
-// //     }
-
-// //     can1.begin();
-// //     can1.setBaudRate(1000000);
-
-// //     Serial.println("Waiting for CAN...");
-
-// //     CAN_message_t rxmsg;
-// //     while (!can1.read(rxmsg)) {
-// //         // Wait for CAN to start sending
-// //     }
-
-// //     // Set the input and control modes
-// //     Serial.println("Setting input and control modes...");
-// //     Set_Controller_Mode_msg_t control_modes;
-// //     control_modes.Control_Mode = CONTROL_MODE_VELOCITY_CONTROL;
-// //     control_modes.Input_Mode   = INPUT_MODE_PASSTHROUGH;
-
-// //     // Prepare the Arduino_CAN message
-// //     CAN_message_t txmsg;
-// //     txmsg.id = (axis_id << ODriveCAN::kNumCmdIdBits) | ODriveCAN::kSetControllerModeMsg;
-// //     txmsg.len = 8;
-
-// //     // Encode the data into the Arduino_CAN data buffer
-// //     control_modes.encode(txmsg.buf);
-
-// //     // Send the Arduino_CAN message
-// //     can1.write(txmsg);
-
-// //     // Request full calibration once
-// //     Serial.println("Requesting Calibration Sequence...");
-// //     // request_axis_state(AXIS_STATE_FULL_CALIBRATION_SEQUENCE);
-
-// //     Serial.println("Waiting for calibration to start...");
-// //     // Read CAN messages until axis state enters calibration
-// //     while (heartbeat.Axis_State == AXIS_STATE_IDLE) {
-// //         if (can1.read(rxmsg)) {
-// //             decode(rxmsg);
-// //         }
-// //     }
-
-// //     Serial.println("Waiting for calibration to complete...");
-// //     // Read CAN messages until axis is done calibrating
-// //     while (heartbeat.Axis_State != AXIS_STATE_IDLE) {
-// //         if (can1.read(rxmsg)) {
-// //             decode(rxmsg);
-// //         }
-// //     }
-
-// //     // Check for errors
-// //     if (heartbeat.Axis_Error != ODRIVE_ERROR_NONE) {
-// //         Serial.print("Calibration failed.  Error code: 0x");
-// //         Serial.println(heartbeat.Axis_Error, HEX);
-
-// //         for (;;) {
-// //             yield();
-// //         }
-// //     }
-
-// //     // Put the axis in closed loop control
-// //     request_axis_state(AXIS_STATE_CLOSED_LOOP_CONTROL);
-// // }
-
-// // void loop() {
-// //     static uint32_t loop_timer = 0UL;
-// //     static float    phase      = 0.0f;
-
-// //     // Read CAN messages
-// //     CAN_message_t rxmsg;
-// //     if (can1.read(rxmsg)) {
-// //         decode(rxmsg);
-// //     }
-
-// //     // Execute every 10ms
-// //     const uint32_t now = millis();
-// //     if ((now - loop_timer) > 10) {
-// //         loop_timer = millis();
-
-// //         float frequency = 1.0f;  // 1 Hz
-// //         float amplitude = 1.0f;  // 1 turn/sec
-
-// //         phase += frequency * 0.01f * 2.0f * (float)PI;
-// //         if (phase > (float)TWO_PI) {
-// //             phase -= (float)TWO_PI;
-// //         }
-
-// //         Set_Input_Vel_msg_t set_vel_msg;
-// //         set_vel_msg.Input_Vel       = amplitude * sinf(phase);
-// //         set_vel_msg.Input_Torque_FF = 0.0f;  // No torque feedforward
-
-// //         CAN_message_t txmsg;
-// //         txmsg.id          = (axis_id << ODriveCAN::kNumCmdIdBits) | ODriveCAN::kSetInputVelMsg;
-// //         txmsg.len = 8;
-
-// //         set_vel_msg.encode(txmsg.buf);
-// //         can1.write(txmsg);
-// //     }
-// // }
-
-// // void decode(CAN_message_t& rxmsg) {
-// //     // Decode the message
-// //     switch (ODriveCAN::get_cmd_id(rxmsg.id)) {
-// //         case ODriveCAN::kHeartbeatMsg: {
-// //             heartbeat.decode(rxmsg.buf);
-// //         } break;
-
-// //         case ODriveCAN::kGetEncoderEstimatesMsg: {
-// //             encoder.decode(rxmsg.buf);
-// //         } break;
-
-// //         default: break;
-// //     }
-// // }
-
-// // void request_axis_state(ODriveAxisState state) {
-// //     // Create an instance of the Axis_State message
-// //     Set_Axis_State_msg_t state_msg;
-
-// //     // Store the desired state in the message
-// //     state_msg.Axis_Requested_State = state;
-
-// //     // Create a message to use for transmitting
-// //     CAN_message_t txmsg;
-
-// //     // Message ID is a combination of node ID and command ID
-// //     txmsg.id = (axis_id << ODriveCAN::kNumCmdIdBits) | ODriveCAN::kSetAxisStateMsg;
-// //     txmsg.len = 8;
-
-// //     // Encode the data stored in the state message into the transmit buffer
-// //     state_msg.encode(txmsg.buf);
-
-// //     // Send the CAN message
-// //     can1.write(txmsg);
-// // }
-
-
-// // // #include <Arduino.h>
-// // // #include <ODriveArduino.h>
-
-// // // ODriveArduino odrive(Serial2);
-
-// // // void setup() {
-// // //   Serial.begin(115200);
-// // //   Serial2.begin(115200); //Odrive serial
-  
-// // //   delay(10);
-
-// // //   Serial.println("Waiting for ODrive...");
-// // //   while (odrive.getState() == AXIS_STATE_UNDEFINED) {
-// // //     delay(100);
-// // //   }
-  
-// // //   Serial.print("DC voltage: ");
-// // //   Serial.println(odrive.getParameterAsFloat("vbus_voltage"));
-  
-// // //   Serial.println("Enabling closed loop control...");
-// // //   while (odrive.getState() != AXIS_STATE_CLOSED_LOOP_CONTROL) {
-// // //     odrive.clearErrors();
-// // //     odrive.setState(AXIS_STATE_CLOSED_LOOP_CONTROL);
-// // //     delay(10);
-// // //   }
-  
-// // //   Serial.println("ODrive running!");
-// // // }
-
-// // // void loop() {
-// // //   float SINE_PERIOD = 2.0f; // Period of the position command sine wave in seconds
-
-// // //   float t = 0.001 * millis();
-  
-// // //   float phase = t * (TWO_PI / SINE_PERIOD);
-  
-// // //   odrive.setPosition(
-// // //     sin(phase), // position
-// // //     cos(phase) * (TWO_PI / SINE_PERIOD) // velocity feedforward (optional)
-// // //   );
-
-// // //   ODriveFeedback feedback = odrive.getFeedback();
-// // //   Serial.print("pos:");
-// // //   Serial.print(feedback.pos);
-// // //   Serial.print(", ");
-// // //   Serial.print("vel:");
-// // //   Serial.print(feedback.vel);
-// // //   Serial.println();
-// // // }
-
-
-// // // // #include <Arduino.h>
-// // // // #include <FlexCAN_T4.h>
-// // // // #include <ODriveTeensyCAN.h>
-
-// // // // void handleCANMsg(int axis_id, CAN_message_t inMsg);
-
-// // // // ODriveTeensyCAN odriveCAN(1000000);
-// // // // float adcVoltage = 0.0;
-// // // // uint8_t buf[8];
-// // // // uint32_t axisError = 0;
-// // // // uint8_t currentState = 0;
-// // // // uint8_t motorFlag = 0;
-// // // // uint8_t encoderFlag = 0;
-// // // // uint8_t trajectoryDone = 0;
-// // // // uint8_t controllerFlag = 0;
-// // // // uint64_t motorError = 0;
-// // // // uint32_t controllerError = 0;
-// // // // uint32_t encoderError = 0;
-// // // // unsigned long timer = 0;
-
-// // // // CAN_message_t inMsg;
-// // // // HeartbeatMsg_t returnVals;
-// // // // EncoderEstimatesMsg_t encoderEstimates;
-// // // // IqMsg_t iqVals;
-
-
-// // // // void setup() {
-// // // //   // put your setup code here, to run once:
-// // // //   Serial.begin(115200);
-  
-// // // //   while(!Serial) {
-// // // //     //wait for computer serial connection
-// // // //   }
-// // // //   delay(100);
-// // // //   Serial.println("yo");
-// // // //  //Serial.println(odriveCAN.Heartbeat());
-// // // //  timer = millis();
-// // // // }
-
-// // // // void loop() {
-// // // //   // put your main code here, to run repeatedly:
-// // // //   if(odriveCAN.ReadMsg(inMsg)) {
-// // // //     Serial.println("CAN msg");
-// // // //     uint32_t axis_id = inMsg.id >> 6;
-// // // //     handleCANMsg(axis_id, inMsg);
-// // // //   }
-
-// // // //   if(controllerFlag == 1) {
-// // // //     odriveCAN.GetControllerError(0);
-// // // //   }
-
-// // // //   if(millis() - timer > 250) {
-// // // //     Serial.println("req data");
-// // // //     odriveCAN.GetVbusVoltage(0);
-// // // //     timer = millis();
-// // // //   }
-  
-// // // //   delay(10);
-// // // // }
-
-// // // // void handleCANMsg(int axis_id, CAN_message_t inMsg) {
-// // // //     uint8_t cmd_id = inMsg.id & 0x01F;
-    
-// // // //     switch(cmd_id) {
-// // // //       case (ODriveTeensyCAN::CMD_ID_ODRIVE_HEARTBEAT_MESSAGE):
-// // // //         odriveCAN.Heartbeat(returnVals, inMsg);
-        
-// // // //     Serial.print("heartbeat: ");
-// // // //     Serial.print(axis_id);
-// // // //     Serial.print("\tAxis error: ");
-// // // //     Serial.print(returnVals.axisError);
-// // // //     Serial.print("\tCurrent state: ");
-// // // //     Serial.print(returnVals.currentState);
-// // // //     Serial.print("\tMotor flag: ");
-// // // //     Serial.print(returnVals.motorFlag);
-// // // //     Serial.print("\tEncoder flag: ");
-// // // //     Serial.print(returnVals.encoderFlag);
-// // // //     Serial.print("\tTraj done: ");
-// // // //     Serial.print(returnVals.trajectoryDone);
-// // // //     Serial.print("\tController flag: ");
-// // // //     Serial.println(returnVals.controllerFlag);
-// // // //     controllerFlag = returnVals.controllerFlag;
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_MOTOR_ERROR):
-// // // //         motorError = odriveCAN.GetMotorErrorResponse(inMsg);
-// // // //         // Serial.print("Motor error: ");
-// // // //         // Serial.println(motorError);
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_ENCODER_ERROR):
-// // // //         encoderError = odriveCAN.GetEncoderErrorResponse(inMsg);
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_CONTROLLER_ERROR):
-// // // //         controllerError = odriveCAN.GetControllerErrorResponse(inMsg);
-// // // //         Serial.print("Controller error: ");
-// // // //         Serial.println(controllerError);
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_ENCODER_ESTIMATES):
-// // // //         odriveCAN.GetPositionVelocityResponse(encoderEstimates, inMsg);
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_IQ):
-// // // //         odriveCAN.GetIqResponse(iqVals, inMsg);
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_ADC_VOLTAGE):
-// // // //         adcVoltage = odriveCAN.GetADCVoltageResponse(inMsg);
-        
-// // // //   Serial.print("adc val: ");
-// // // //   Serial.println(adcVoltage);
-// // // //         break;
-// // // //       case (ODriveTeensyCAN::CMD_ID_GET_VBUS_VOLTAGE):
-// // // //         adcVoltage = odriveCAN.GetVbusVoltageResponse(inMsg);
-// // // //         Serial.print("vbus val: ");
-// // // //         Serial.println(adcVoltage);
-// // // //         break;
-// // // //       default:
-// // // //         break;
-// // // //     }
-// // // // }
