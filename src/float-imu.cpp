@@ -1,15 +1,14 @@
 #include "float-imu.h"
 
-void float_imu_init(void) {
+float_imu::float_imu(/* args */)
+{
   // join I2C bus (I2Cdev library doesn't do this automatically)
   Wire.begin();
   // initialize device
   accelgyro.initialize();
 }
-
 // AHRS loop
-
-void float_imu_update(void)
+void float_imu::float_imu_update(void)
 {
   get_MPU_scaled();
   now = micros();
@@ -58,7 +57,7 @@ void float_imu_update(void)
   // }
 }
 
-void get_MPU_scaled(void) {
+void float_imu::get_MPU_scaled(void) {
   float temp[3];
   int i;
   accelgyro.getMotion9(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
@@ -90,7 +89,7 @@ void get_MPU_scaled(void) {
 
 // Mahony scheme uses proportional and integral filtering on
 // the error between estimated reference vectors and measured ones.
-void MahonyQuaternionUpdate(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat)
+void float_imu::MahonyQuaternionUpdate(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat)
 {
   // Vector to hold integral error for Mahony method
   static float eInt[3] = {0.0, 0.0, 0.0};
@@ -189,12 +188,12 @@ q4 += (qa * gz + qb * gy - qc * gx);
   q[3] = q4 * norm;
 }
 
-float vector_dot(float a[3], float b[3])
+float float_imu::vector_dot(float a[3], float b[3])
 {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
-void vector_normalize(float a[3])
+void float_imu::vector_normalize(float a[3])
 {
   float mag = sqrt(vector_dot(a, a));
   a[0] /= mag;

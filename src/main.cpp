@@ -17,9 +17,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "float.h"
+#include "float-main.h"
 
-ODriveArduino odrive(Serial1);
+// ODriveArduino odrive(Serial1);
 
 void buzzer_init()
 {
@@ -2116,36 +2116,37 @@ bool should_terminate(void) {
 }
 
 float ahrs_get_roll(ATTITUDE_INFO* att_ref) {
-	return roll;
+	return imu.roll;
 }
 
 float ahrs_get_pitch(ATTITUDE_INFO* att_ref) {
-	return pitch;
+	return imu.pitch;
 }
 
 float ahrs_get_yaw(ATTITUDE_INFO* att_ref) {
-	return yaw;
+	return imu.yaw;
 }
 
 float imu_get_pitch(void) {
-	return Gxyz[0];
+	return imu.Gxyz[0];
 }
 
 void update_imu(void) {
-    float_imu_update();
+    imu.float_imu_update();
 }
 /*
 Update gyro
 *gyro is a array of 3 floats with the 3 axis
 */
 void imu_get_gyro(float *gyro) {
-	gyro = Gxyz;
+	gyro = imu.Gxyz;
 }
 /*
 Return the rpm of the wheel
 */
 float mc_get_rpm(void) {
-	return odrive.getVelocity()*60;
+	return gear_ratio * (esc.float_vesc_get_motor_rpm() - get_engine_rpm()); // Use motor encoder for more accuracty?
+	// return odrive.getVelocity()*60;
 }
 
 /*
@@ -2156,7 +2157,8 @@ bool imu_startup_done(void) {
 }
 
 float mc_get_input_voltage_filtered(void) {
-	return odrive.getParameterAsFloat("vbus_voltage");
+	// return odrive.getParameterAsFloat("vbus_voltage");
+	return esc.float_vesc_get_vbus();
 }
 
 /*
@@ -2178,7 +2180,7 @@ Create a function that can convert current into a motor/engine command that will
 Check where this is used in the code to see if it's only used to bring the board to a halt or if it's used in the actual control
 */
 void mc_set_brake_current(float current) {
-
+	esc.float_vesc_set_brake_current(current);
 }
 
 /*
@@ -2209,15 +2211,27 @@ void set_current(data *d, float current) {
 	} else if(current < 0 && current < l_current_min) {
 		current = l_current_min;
 	}
-    odrive.setTorque(current);
+	float conversion_factor = (1/0.11) * 8.27/270;
+	float setpoint_torque = current * conversion_factor;
+	float engine_torque_current = 0;
+	float motor_torque_needed = setpoint_torque - engine_torque_current;
+	esc.float_vesc_set_current(motor_torque_needed / (8.27/270));
+}
+
+float get_engine_torque() {
+	return 0;
+}
+
+float get_engine_rpm() {
+	return 0;
 }
 
 float get_current() {
-
+	return esc.float_vesc_get_motor_current();
 }
-float previous_rpm_setpoint = 0;
-void set_engine_throttle(float rpm_setpont) {
 
+void set_engine_throttle(float throttle) {
+	engine_throttle_servo.writeMicroseconds(map(throttle,0,1.0f,1400,1150));
 }
 
 void setup() {
@@ -2234,15 +2248,7 @@ void setup() {
     confparser_set_defaults_float_config(&(d->float_conf));
 	d->m_att_ref.acc_confidence_decay = 0.1;
 	d->m_att_ref.kp = 0.2;
-    Serial.println("Waiting for ODrive...");
-	float_imu_init();
-	float_imu_update();
-    while (odrive.getState() == AXIS_STATE_UNDEFINED) { delay(100); }
-    while (odrive.getState() != AXIS_STATE_CLOSED_LOOP_CONTROL) {
-        odrive.clearErrors();
-        odrive.setState(AXIS_STATE_CLOSED_LOOP_CONTROL);
-        delay(10);
-    }
+	imu.float_imu_update();
 	float_thd(d);
 }
 
